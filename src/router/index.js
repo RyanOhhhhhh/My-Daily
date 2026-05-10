@@ -9,7 +9,7 @@ const routes = [
   {
     path: '/',
     component: () => import('../views/MainLayout.vue'),
-    redirect: '/timeline',
+    redirect: '/record/new',
     children: [
       {
         path: 'timeline',

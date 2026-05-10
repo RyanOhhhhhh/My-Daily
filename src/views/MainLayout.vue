@@ -4,9 +4,9 @@
       <h3>My Diary</h3>
       <p class="user-info" v-if="username">👤 {{ username }}</p>
       <ul>
+        <li><router-link to="/record/new">✏️ 写记录</router-link></li>
         <li><router-link to="/timeline">📅 时间线</router-link></li>
         <li><router-link to="/map">🗺️ 地图</router-link></li>
-        <li><router-link to="/record/new">✏️ 写记录</router-link></li>
       </ul>
       <button class="logout" @click="handleLogout">退出登录</button>
     </nav>
