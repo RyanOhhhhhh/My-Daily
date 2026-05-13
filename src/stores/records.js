@@ -3,15 +3,15 @@ import { reactive, computed } from 'vue'
 // 记录数据
 const recordsMap = reactive({
   '2026-5': [
-    { id: 1, day: 11, title: '搭建项目框架', location: '家里', lat: 39.9042, lng: 116.4074 },
-    { id: 2, day: 12, title: '完成时间线模块重构', location: '咖啡厅', lat: 39.9142, lng: 116.4174 },
+    { id: 1, day: 11, title: '搭建项目框架', location: '北京 · 中关村创业大街', lat: 39.9828, lng: 116.3104 },
+    { id: 2, day: 12, title: '完成时间线模块重构', location: '北京 · 五道口 · 清华科技园', lat: 39.9905, lng: 116.3373 },
   ],
   '2026-4': [
-    { id: 3, day: 28, title: '项目规划与需求分析', location: '办公室', lat: 39.9242, lng: 116.3974 },
+    { id: 3, day: 28, title: '项目规划与需求分析', location: '北京 · 望京SOHO', lat: 39.9960, lng: 116.4818 },
   ],
   '2025-12': [
-    { id: 4, day: 25, title: '圣诞节小记', location: '家里', lat: 39.9042, lng: 116.4074 },
-    { id: 5, day: 10, title: '年末总结', location: '公司', lat: 39.9342, lng: 116.4274 },
+    { id: 4, day: 25, title: '圣诞节小记', location: '北京 · 三里屯太古里', lat: 39.9330, lng: 116.4551 },
+    { id: 5, day: 10, title: '年末总结', location: '北京 · 国贸CBD', lat: 39.9087, lng: 116.4605 },
   ],
 })
 

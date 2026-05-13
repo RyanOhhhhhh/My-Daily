@@ -1,7 +1,8 @@
 <template>
   <div class="map-view">
     <h2>地图记录</h2>
-    <p class="map-hint" v-if="mapRecords.length === 0">暂无带位置的记录</p>
+    <p class="map-hint" v-if="mapRecords.length === 0 && !locating">暂无带位置的记录</p>
+    <p class="map-hint locating-hint" v-if="locating">正在定位当前手机位置…</p>
     <div class="map-wrap" v-if="mapRecords.length > 0">
       <div class="map-container">
         <div ref="mapRef" class="leaflet-map"></div>
@@ -38,9 +39,48 @@ const mapRef = ref(null)
 let mapInstance = null
 let markersLayer = null
 const activeId = ref(null)
+const myLocation = ref(null)      // 当前定位坐标
+const locating = ref(false)        // 正在定位
+const locateFailed = ref(false)    // 定位失败
 
 // 默认中心（北京）
 const defaultCenter = [39.9042, 116.4074]
+
+/** 获取浏览器定位，添加蓝色标记 */
+function addCurrentLocation() {
+  if (!navigator.geolocation) {
+    locateFailed.value = true
+    return
+  }
+  locating.value = true
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude
+      const lng = pos.coords.longitude
+      myLocation.value = [lat, lng]
+      locateFailed.value = false
+      locating.value = false
+
+      // 等地图初始化完成后添加蓝色标记
+      nextTick(() => {
+        if (!mapInstance) return
+        const myIcon = L.divIcon({
+          html: '<div class="my-location-pin"><div class="pulse-ring"></div></div>',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+          className: 'my-location-icon',
+        })
+        L.marker([lat, lng], { icon: myIcon }).addTo(mapInstance)
+      })
+    },
+    () => {
+      // 定位失败，静默处理
+      locateFailed.value = true
+      locating.value = false
+    },
+    { timeout: 8000, enableHighAccuracy: false }
+  )
+}
 
 function initMap() {
   if (!mapRef.value || mapRecords.value.length === 0) return
@@ -122,7 +162,10 @@ function flyTo(r) {
 }
 
 onMounted(() => {
-  nextTick(initMap)
+  nextTick(() => {
+    initMap()
+    addCurrentLocation()
+  })
 })
 
 onBeforeUnmount(() => {
@@ -213,4 +256,30 @@ h2 { margin: 0 0 8px; font-size: 22px; }
 :global(.map-popup strong) { display: block; margin-bottom: 4px; color: #333; }
 :global(.map-popup p) { margin: 0; color: #888; font-size: 12px; }
 :global(.leaflet-popup-content) { margin: 10px 14px; }
+
+/* ---- 当前定位蓝点（脉冲动画） ---- */
+:global(.my-location-icon) { background: none !important; border: none !important; }
+:global(.my-location-pin) {
+  width: 18px; height: 18px;
+  background: #4285f4;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(66,133,244,0.5);
+  position: relative;
+}
+:global(.pulse-ring) {
+  position: absolute;
+  top: -8px; left: -8px;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 2px solid #4285f4;
+  animation: pulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes pulse {
+  0%   { transform: scale(0.6); opacity: 1; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+.locating-hint { color: #4285f4 !important; }
 </style>
