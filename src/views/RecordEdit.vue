@@ -106,6 +106,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useRecords } from '../stores/records'
 import { AMAP_KEY } from '../config'
 import { marked, Renderer } from 'marked'
+import exifr from 'exifr'
 
 // ---- 全局配置 marked ----
 marked.setOptions({ breaks: true, gfm: true })
@@ -200,13 +201,27 @@ const imgSize = ref('100%')
 
 function triggerImageUpload() { fileInputRef.value?.click() }
 
-function onImageSelected(e) {
+async function onImageSelected(e) {
   const file = e.target.files?.[0]
   if (!file) return
   pendingFile = file
   imgSize.value = '100%'
   showSizePicker.value = true
   e.target.value = ''
+
+  // 读取照片 EXIF GPS → 自动定位到拍照地点
+  try {
+    const gps = await exifr.gps(file)
+    if (gps && gps.latitude && gps.longitude) {
+      recordLat.value = gps.latitude
+      recordLng.value = gps.longitude
+      const name = await fetchLocationName(gps.latitude, gps.longitude)
+      if (name) location.value = name
+    }
+  } catch (err) {
+    // 无 EXIF GPS 或解析失败 → 静默忽略
+    console.warn('[照片定位] 无 GPS 信息:', err)
+  }
 }
 
 function confirmImageSize() {
@@ -297,7 +312,7 @@ async function locateByIP() {
 }
 
 // ---- 获取位置 ----
-async function getLocation() {
+async function getLocation(skipIfSet = false) {
   locating.value = true
   recordLat.value = null
   recordLng.value = null
@@ -321,13 +336,13 @@ async function getLocation() {
   ])
   if (!name) {
     const ip = await locateByIP()
-    if (ip) {
+    if (ip && (!skipIfSet || !location.value)) {
       location.value = ip.name
       recordLat.value = ip.lat
       recordLng.value = ip.lon
     }
   } else {
-    location.value = name
+    if (!skipIfSet || !location.value) location.value = name
   }
   locating.value = false
 }
@@ -357,7 +372,7 @@ function saveRecord() {
   }
 }
 
-onMounted(() => { if (!isEdit) getLocation() })
+onMounted(() => { if (!isEdit) getLocation(true) })
 </script>
 
 <style scoped>

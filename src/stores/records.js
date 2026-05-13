@@ -36,7 +36,7 @@ export function useRecords() {
   // ---- 从后端加载所有记录 ----
   async function fetchRecords() {
     try {
-      const data = await api.get('/records')
+      const data = await api.get('/api/records')
       // 清空再填充
       for (const key of Object.keys(recordsMap)) {
         delete recordsMap[key]
@@ -79,7 +79,7 @@ export function useRecords() {
       lng: lng || null,
       record_date: date || new Date().toISOString(),
     }
-    const r = await api.post('/records', body)
+    const r = await api.post('/api/records', body)
     const { year, month, day } = parseRecordDate(r)
     const key = `${year}-${month}`
     if (!recordsMap[key]) recordsMap[key] = []
@@ -106,7 +106,7 @@ export function useRecords() {
     }
     // 本地没有则从后端取
     try {
-      const r = await api.get(`/records/${id}`)
+      const r = await api.get(`/api/records/${id}`)
       const { year, month, day } = parseRecordDate(r)
       const key = `${year}-${month}`
       if (!recordsMap[key]) recordsMap[key] = []
@@ -140,7 +140,7 @@ export function useRecords() {
     if (lat !== undefined) body.lat = lat
     if (lng !== undefined) body.lng = lng
 
-    const r = await api.put(`/records/${id}`, body)
+    const r = await api.put(`/api/records/${id}`, body)
     // 更新本地缓存
     for (const list of Object.values(recordsMap)) {
       const found = list.find(item => item.id === Number(id))
@@ -157,7 +157,7 @@ export function useRecords() {
   }
 
   async function deleteRecord(id) {
-    await api.del(`/records/${id}`)
+    await api.del(`/api/records/${id}`)
     for (const key of Object.keys(recordsMap)) {
       const idx = recordsMap[key].findIndex(item => item.id === Number(id))
       if (idx !== -1) {

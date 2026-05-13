@@ -52,7 +52,7 @@ async function handleSubmit() {
   error.value = ''
 
   try {
-    const endpoint = isLogin.value ? '/auth/login' : '/auth/register'
+    const endpoint = isLogin.value ? '/api/auth/login' : '/api/auth/register'
     const data = await api.post(endpoint, {
       username: username.value,
       password: password.value,
