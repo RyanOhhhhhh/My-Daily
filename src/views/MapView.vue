@@ -1,67 +1,60 @@
 <template>
   <div class="map-view">
     <h2>地图记录</h2>
-    <p class="map-hint" v-if="mapRecords.length === 0 && !locating">暂无带位置的记录</p>
+    <p class="map-hint" v-if="mapRecords.length === 0 && !locating">暂无带照片的记录</p>
     <p class="map-hint locating-hint" v-if="locating">正在定位当前手机位置…</p>
     <div class="map-wrap" v-if="mapRecords.length > 0">
       <div class="map-container">
         <div ref="mapRef" class="leaflet-map"></div>
-      </div>
-      <div class="record-sidebar">
-        <h4>有位置的记录 ({{ mapRecords.length }})</h4>
-        <div
-          v-for="r in mapRecords"
-          :key="r.id"
-          class="sidebar-item"
-          @click="flyTo(r)"
-          :class="{ active: activeId === r.id }"
-        >
-          <span class="sidebar-date">{{ r.date }}</span>
-          <span class="sidebar-title">{{ r.title }}</span>
-          <span class="sidebar-location">{{ r.location }}</span>
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRecords } from '../stores/records'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import 'leaflet.markercluster'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
 const router = useRouter()
-const { mapRecords } = useRecords()
+const { mapRecords, mapViewState } = useRecords()
 
 const mapRef = ref(null)
 let mapInstance = null
-let markersLayer = null
-const activeId = ref(null)
-const myLocation = ref(null)      // 当前定位坐标
-const locating = ref(false)        // 正在定位
-const locateFailed = ref(false)    // 定位失败
+const mcg = L.markerClusterGroup({
+  iconCreateFunction: function (cluster) {
+    const markers = cluster.getAllChildMarkers()
+    const photoUrl = markers[0]?.options?.photoUrl || ''
+    const count = markers.length
+    return L.divIcon({
+      html: `<div class="cluster-photo"><img src="${photoUrl}" /><span class="cluster-badge">${count}</span></div>`,
+      iconSize: [56, 56],
+      iconAnchor: [28, 28],
+      className: 'photo-marker-icon',
+    })
+  },
+  maxClusterRadius: 60,
+  spiderfyOnMaxZoom: true,
+  showCoverageOnHover: false,
+  zoomToBoundsOnClick: true,
+})
+const locating = ref(false)
 
 // 默认中心（北京）
 const defaultCenter = [39.9042, 116.4074]
 
 /** 获取浏览器定位，添加蓝色标记 */
 function addCurrentLocation() {
-  if (!navigator.geolocation) {
-    locateFailed.value = true
-    return
-  }
+  if (!navigator.geolocation) return
   locating.value = true
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      const lat = pos.coords.latitude
-      const lng = pos.coords.longitude
-      myLocation.value = [lat, lng]
-      locateFailed.value = false
       locating.value = false
-
-      // 等地图初始化完成后添加蓝色标记
       nextTick(() => {
         if (!mapInstance) return
         const myIcon = L.divIcon({
@@ -70,14 +63,10 @@ function addCurrentLocation() {
           iconAnchor: [12, 12],
           className: 'my-location-icon',
         })
-        L.marker([lat, lng], { icon: myIcon }).addTo(mapInstance)
+        L.marker([pos.coords.latitude, pos.coords.longitude], { icon: myIcon }).addTo(mapInstance)
       })
     },
-    () => {
-      // 定位失败，静默处理
-      locateFailed.value = true
-      locating.value = false
-    },
+    () => { locating.value = false },
     { timeout: 8000, enableHighAccuracy: false }
   )
 }
@@ -92,73 +81,56 @@ function initMap() {
     attributionControl: false,
   })
 
-  // OpenStreetMap 瓦片
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
   }).addTo(mapInstance)
 
-  // 自定义图标（绿色标记）
-  const icon = L.divIcon({
-    html: '<div class="map-marker-pin"></div>',
-    iconSize: [24, 24],
-    iconAnchor: [12, 24],
-    popupAnchor: [0, -30],
-    className: 'map-marker-icon',
-  })
+  mcg.addTo(mapInstance)
 
-  markersLayer = L.layerGroup().addTo(mapInstance)
+  // 返回地图时恢复之前的视野（点击标记时已预先保存）
+  if (mapViewState.center && mapViewState.zoom) {
+    mapInstance.setView([mapViewState.center.lat, mapViewState.center.lng], mapViewState.zoom, { animate: false })
+  }
 
   mapRecords.value.forEach((r) => {
-    const marker = L.marker([r.lat, r.lng], { icon }).addTo(markersLayer)
-    marker.bindPopup(`
-      <div class="map-popup" data-id="${r.id}">
-        <strong>${r.title}</strong>
-        <p>${r.location} · ${r.date}</p>
-      </div>
-    `)
+    // 照片缩略图标记（圆形裁剪，如手机相册地图）
+    const photoIcon = L.divIcon({
+      html: `<div class="photo-marker"><img src="${r.firstPhoto}" alt="${r.title}" /></div>`,
+      iconSize: [56, 56],
+      iconAnchor: [28, 28],
+      className: 'photo-marker-icon',
+    })
+
+    const marker = L.marker([r.lat, r.lng], {
+      icon: photoIcon,
+      photoUrl: r.firstPhoto,
+    })
+    mcg.addLayer(marker)
+
+    // 点击照片标记 → 先保存视野再跳转
     marker.on('click', () => {
-      activeId.value = r.id
-    })
-    marker.on('popupopen', () => {
-      activeId.value = r.id
-    })
-  })
-
-  // 点击弹窗跳转详情
-  mapInstance.on('popupopen', () => {
-    const popupEl = document.querySelector('.map-popup')
-    if (popupEl) {
-      popupEl.addEventListener('click', () => {
-        const id = popupEl.dataset.id
-        if (id) router.push('/record/' + id)
-      })
-    }
-  })
-
-  // 自适应边界
-  if (mapRecords.value.length === 1) {
-    mapInstance.setView([mapRecords.value[0].lat, mapRecords.value[0].lng], 14)
-  } else {
-    const bounds = L.latLngBounds(mapRecords.value.map(r => [r.lat, r.lng]))
-    mapInstance.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 })
-  }
-
-  // 延迟修正尺寸
-  setTimeout(() => mapInstance?.invalidateSize(), 200)
-}
-
-function flyTo(r) {
-  activeId.value = r.id
-  if (mapInstance) {
-    mapInstance.setView([r.lat, r.lng], 15, { animate: true })
-    // 打开对应弹窗
-    markersLayer.eachLayer((marker) => {
-      const latLng = marker.getLatLng()
-      if (Math.abs(latLng.lat - r.lat) < 0.001 && Math.abs(latLng.lng - r.lng) < 0.001) {
-        marker.openPopup()
+      if (mapInstance) {
+        const c = mapInstance.getCenter()
+        mapViewState.center = { lat: c.lat, lng: c.lng }
+        mapViewState.zoom = mapInstance.getZoom()
       }
+      router.push('/record/' + r.id)
     })
+  })
+
+  // 未缓存视野时才自适应边界
+  if (!savedView) {
+    if (mapRecords.value.length === 1) {
+      mapInstance.setView([mapRecords.value[0].lat, mapRecords.value[0].lng], 14)
+    } else {
+      const bounds = mcg.getBounds()
+      if (bounds.isValid()) {
+        mapInstance.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 })
+      }
+    }
   }
+
+  setTimeout(() => mapInstance?.invalidateSize(), 200)
 }
 
 onMounted(() => {
@@ -170,6 +142,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (mapInstance) {
+    // 兜底：如果点击标记时已保存则跳过
+    if (!mapViewState.center) {
+      const c = mapInstance.getCenter()
+      mapViewState.center = { lat: c.lat, lng: c.lng }
+      mapViewState.zoom = mapInstance.getZoom()
+    }
     mapInstance.remove()
     mapInstance = null
   }
@@ -182,18 +160,17 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
 }
-h2 { margin: 0 0 8px; font-size: 22px; }
-.map-hint { color: #999; padding: 40px; text-align: center; }
+h2 { margin: 0 0 12px; font-size: 24px; font-weight: 700; color: var(--text); }
+.map-hint { color: var(--text-muted); padding: 60px 40px; text-align: center; font-size: 15px; }
 
 .map-wrap {
   flex: 1;
-  display: flex;
-  gap: 12px;
   min-height: 520px;
 }
 
 .map-container {
-  flex: 1;
+  width: 100%;
+  height: 100%;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid #eee;
@@ -206,58 +183,71 @@ h2 { margin: 0 0 8px; font-size: 22px; }
   z-index: 0;
 }
 
-/* ---- 侧边栏 ---- */
-.record-sidebar {
-  width: 260px;
-  overflow-y: auto;
-  border: 1px solid #eee;
-  border-radius: 8px;
-  padding: 12px;
-  max-height: 560px;
-}
-
-.record-sidebar h4 {
-  margin: 0 0 10px;
-  font-size: 14px;
-  color: #666;
-}
-
-.sidebar-item {
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  margin-bottom: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  transition: background 0.15s;
-}
-
-.sidebar-item:hover { background: #f0f9f4; }
-.sidebar-item.active { background: #e0f5e8; border-left: 3px solid #42b983; }
-
-.sidebar-date { font-size: 11px; color: #aaa; }
-.sidebar-title { font-size: 14px; color: #333; font-weight: 500; }
-.sidebar-location { font-size: 12px; color: #888; }
-
-/* ---- 自定义标记 ---- */
-:global(.map-marker-icon) { background: none !important; border: none !important; }
-:global(.map-marker-pin) {
-  width: 20px;
-  height: 20px;
-  background: #42b983;
-  border: 3px solid #fff;
+/* ---- 照片缩略图标记（圆形裁剪） ---- */
+:global(.photo-marker-icon) { background: none !important; border: none !important; }
+:global(.photo-marker) {
+  width: 56px; height: 56px;
   border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  overflow: hidden;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+:global(.photo-marker:hover) {
+  transform: scale(1.12);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+}
+:global(.photo-marker img) {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---- 照片集群标记（自动合并） ---- */
+:global(.cluster-photo) {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  position: relative;
+  cursor: pointer;
+}
+:global(.cluster-photo img) {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+:global(.cluster-badge) {
+  position: absolute;
+  bottom: -4px; right: -4px;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 20px; height: 20px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 10px;
+  padding: 0 4px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  border: 2px solid #fff;
 }
 
 /* ---- 弹窗样式 ---- */
-:global(.map-popup) { cursor: pointer; font-size: 14px; }
+:global(.map-popup) { cursor: pointer; font-size: 14px; min-width: 180px; }
+:global(.map-popup .popup-photo) {
+  width: 100%; height: 120px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
 :global(.map-popup strong) { display: block; margin-bottom: 4px; color: #333; }
 :global(.map-popup p) { margin: 0; color: #888; font-size: 12px; }
 :global(.leaflet-popup-content) { margin: 10px 14px; }
 
-/* ---- 当前定位蓝点（脉冲动画） ---- */
+/* ---- 当前定位蓝点 ---- */
 :global(.my-location-icon) { background: none !important; border: none !important; }
 :global(.my-location-pin) {
   width: 18px; height: 18px;

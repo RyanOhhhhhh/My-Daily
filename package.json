@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "leaflet": "^1.9.4",
+    "leaflet.markercluster": "^1.5.3",
     "marked": "^18.0.3",
     "vue": "^3.5.32",
     "vue-router": "^4.6.4"

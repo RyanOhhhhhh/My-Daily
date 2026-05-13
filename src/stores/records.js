@@ -1,87 +1,188 @@
 import { reactive, computed } from 'vue'
+import { api } from '../api'
 
-// 记录数据
-const recordsMap = reactive({
-  '2026-5': [
-    { id: 1, day: 11, title: '搭建项目框架', location: '北京 · 中关村创业大街', lat: 39.9828, lng: 116.3104 },
-    { id: 2, day: 12, title: '完成时间线模块重构', location: '北京 · 五道口 · 清华科技园', lat: 39.9905, lng: 116.3373 },
-  ],
-  '2026-4': [
-    { id: 3, day: 28, title: '项目规划与需求分析', location: '北京 · 望京SOHO', lat: 39.9960, lng: 116.4818 },
-  ],
-  '2025-12': [
-    { id: 4, day: 25, title: '圣诞节小记', location: '北京 · 三里屯太古里', lat: 39.9330, lng: 116.4551 },
-    { id: 5, day: 10, title: '年末总结', location: '北京 · 国贸CBD', lat: 39.9087, lng: 116.4605 },
-  ],
-})
+// 从 Markdown 正文中提取第一张图片 URL
+function getFirstImage(content) {
+  if (!content) return null
+  const m = content.match(/!\[.*?\]\(([^\s)]+)(?:\s*=\d+%?)?\)/)
+  return m ? m[1] : null
+}
+
+// 从记录日期中提取年/月/日
+function parseRecordDate(record) {
+  const d = record.record_date ? new Date(record.record_date) : new Date(record.created_at)
+  return {
+    year: d.getFullYear(),
+    month: d.getMonth() + 1,
+    day: d.getDate(),
+  }
+}
+
+// 本地缓存（从 API 加载后存入）
+const recordsMap = reactive({})
+let loaded = false
 
 // 折叠状态
 const openYears = reactive({})
 const openMonths = reactive({})
 
-let nextId = 6
+// 地图视野缓存
+const mapViewState = reactive({
+  center: null,
+  zoom: null,
+})
 
 export function useRecords() {
-  function addRecord({ title, content, location, date, lat, lng }) {
-    const now = date ? new Date(date) : new Date()
-    const y = now.getFullYear()
-    const m = now.getMonth() + 1
-    const d = now.getDate()
-    const key = `${y}-${m}`
-
-    if (!recordsMap[key]) {
-      recordsMap[key] = []
+  // ---- 从后端加载所有记录 ----
+  async function fetchRecords() {
+    try {
+      const data = await api.get('/records')
+      // 清空再填充
+      for (const key of Object.keys(recordsMap)) {
+        delete recordsMap[key]
+      }
+      for (const r of data.records) {
+        const { year, month } = parseRecordDate(r)
+        const key = `${year}-${month}`
+        if (!recordsMap[key]) recordsMap[key] = []
+        const existing = recordsMap[key].find(item => item.id === r.id)
+        if (!existing) {
+          recordsMap[key].push({
+            id: r.id,
+            day: parseRecordDate(r).day,
+            title: r.title,
+            content: r.content || '',
+            location: r.location || '',
+            lat: r.lat,
+            lng: r.lng,
+            _record_date: r.record_date,
+            _created_at: r.created_at,
+          })
+        }
+      }
+      // 排序
+      for (const key of Object.keys(recordsMap)) {
+        recordsMap[key].sort((a, b) => b.day - a.day || b.id - a.id)
+      }
+      loaded = true
+    } catch (e) {
+      console.error('[records] 加载失败:', e)
     }
+  }
 
-    const record = {
-      id: nextId++,
-      day: d,
+  async function addRecord({ title, content, location, date, lat, lng }) {
+    const body = {
       title,
       content: content || '',
       location: location || '',
       lat: lat || null,
       lng: lng || null,
+      record_date: date || new Date().toISOString(),
     }
-
-    recordsMap[key].push(record)
-    recordsMap[key].sort((a, b) => b.day - a.day)
-
-    return record
+    const r = await api.post('/records', body)
+    const { year, month, day } = parseRecordDate(r)
+    const key = `${year}-${month}`
+    if (!recordsMap[key]) recordsMap[key] = []
+    recordsMap[key].push({
+      id: r.id,
+      day,
+      title: r.title,
+      content: r.content || '',
+      location: r.location || '',
+      lat: r.lat,
+      lng: r.lng,
+      _record_date: r.record_date,
+      _created_at: r.created_at,
+    })
+    recordsMap[key].sort((a, b) => b.day - a.day || b.id - a.id)
+    return r
   }
 
-  function getRecordById(id) {
+  async function getRecordById(id) {
+    // 先查本地缓存
     for (const list of Object.values(recordsMap)) {
       const found = list.find(r => r.id === Number(id))
       if (found) return found
     }
-    return null
+    // 本地没有则从后端取
+    try {
+      const r = await api.get(`/records/${id}`)
+      const { year, month, day } = parseRecordDate(r)
+      const key = `${year}-${month}`
+      if (!recordsMap[key]) recordsMap[key] = []
+      const record = {
+        id: r.id,
+        day,
+        title: r.title,
+        content: r.content || '',
+        location: r.location || '',
+        lat: r.lat,
+        lng: r.lng,
+        _record_date: r.record_date,
+        _created_at: r.created_at,
+      }
+      if (!recordsMap[key].find(item => item.id === r.id)) {
+        recordsMap[key].push(record)
+        recordsMap[key].sort((a, b) => b.day - a.day || b.id - a.id)
+      }
+      return record
+    } catch (e) {
+      console.error('[records] 获取记录失败:', e)
+      return null
+    }
   }
 
-  function updateRecord(id, { title, content, location, lat, lng }) {
+  async function updateRecord(id, { title, content, location, lat, lng }) {
+    const body = {}
+    if (title !== undefined) body.title = title
+    if (content !== undefined) body.content = content
+    if (location !== undefined) body.location = location
+    if (lat !== undefined) body.lat = lat
+    if (lng !== undefined) body.lng = lng
+
+    const r = await api.put(`/records/${id}`, body)
+    // 更新本地缓存
     for (const list of Object.values(recordsMap)) {
-      const r = list.find(item => item.id === Number(id))
-      if (r) {
-        if (title !== undefined) r.title = title
-        if (content !== undefined) r.content = content
-        if (location !== undefined) r.location = location
-        if (lat !== undefined) r.lat = lat
-        if (lng !== undefined) r.lng = lng
+      const found = list.find(item => item.id === Number(id))
+      if (found) {
+        if (title !== undefined) found.title = r.title
+        if (content !== undefined) found.content = r.content
+        if (location !== undefined) found.location = r.location
+        if (lat !== undefined) found.lat = r.lat
+        if (lng !== undefined) found.lng = r.lng
         return true
       }
     }
-    return false
+    return true
   }
 
-  // 有坐标的记录（用于地图）
+  async function deleteRecord(id) {
+    await api.del(`/records/${id}`)
+    for (const key of Object.keys(recordsMap)) {
+      const idx = recordsMap[key].findIndex(item => item.id === Number(id))
+      if (idx !== -1) {
+        recordsMap[key].splice(idx, 1)
+        if (recordsMap[key].length === 0) {
+          delete recordsMap[key]
+        }
+        return true
+      }
+    }
+    return true
+  }
+
+  // 有坐标且有照片的记录（用于地图）
   const mapRecords = computed(() => {
     const results = []
     for (const [key, records] of Object.entries(recordsMap)) {
       const [y, m] = key.split('-').map(Number)
       for (const r of records) {
-        if (r.lat && r.lng) {
+        const firstPhoto = getFirstImage(r.content)
+        if (r.lat && r.lng && firstPhoto) {
           results.push({
             ...r,
             date: `${y}-${String(m).padStart(2, '0')}-${String(r.day).padStart(2, '0')}`,
+            firstPhoto,
           })
         }
       }
@@ -125,5 +226,18 @@ export function useRecords() {
     openMonths[key] = openMonths[key] === false ? true : false
   }
 
-  return { recordsMap, addRecord, getRecordById, updateRecord, mapRecords, yearTree, toggleYear, toggleMonth }
+  return {
+    recordsMap,
+    addRecord,
+    getRecordById,
+    updateRecord,
+    deleteRecord,
+    fetchRecords,
+    mapRecords,
+    yearTree,
+    toggleYear,
+    toggleMonth,
+    mapViewState,
+    loaded,
+  }
 }
