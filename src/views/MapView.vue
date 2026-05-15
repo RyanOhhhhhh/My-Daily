@@ -119,7 +119,7 @@ function initMap() {
   })
 
   // 未缓存视野时才自适应边界
-  if (!savedView) {
+  if (!mapViewState.center) {
     if (mapRecords.value.length === 1) {
       mapInstance.setView([mapRecords.value[0].lat, mapRecords.value[0].lng], 14)
     } else {
