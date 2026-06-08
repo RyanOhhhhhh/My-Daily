@@ -34,6 +34,7 @@ def create_record(
         location=body.location,
         lat=body.lat,
         lng=body.lng,
+        images=body.images or "[]",
     )
     db.add(record)
     db.commit()

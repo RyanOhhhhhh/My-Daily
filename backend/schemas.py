@@ -30,6 +30,11 @@ class AuthResponse(BaseModel):
     user: UserOut
 
 
+# ---- Auth Verify ----
+class VerifyPassword(BaseModel):
+    password: str
+
+
 # ---- Records ----
 class RecordCreate(BaseModel):
     title: str
@@ -38,6 +43,7 @@ class RecordCreate(BaseModel):
     location: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    images: Optional[str] = "[]"
 
 
 class RecordUpdate(BaseModel):
@@ -47,6 +53,7 @@ class RecordUpdate(BaseModel):
     location: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    images: Optional[str] = None
 
 
 class RecordOut(BaseModel):
@@ -58,6 +65,7 @@ class RecordOut(BaseModel):
     location: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    images: str = "[]"
     created_at: datetime
     updated_at: datetime
 

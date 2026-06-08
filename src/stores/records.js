@@ -1,11 +1,16 @@
 import { reactive, computed } from 'vue'
 import { api } from '../api'
 
-// 从 Markdown 正文中提取第一张图片 URL
-function getFirstImage(content) {
-  if (!content) return null
-  const m = content.match(/!\[.*?\]\(([^\s)]+)(?:\s*=\d+%?)?\)/)
-  return m ? m[1] : null
+// 从记录中提取第一张图片 URL（先查 images 数组，再 fallback 到 Markdown 正文）
+function getFirstImage(record) {
+  if (record.images && record.images.length > 0) {
+    return record.images[0]
+  }
+  if (record.content) {
+    const m = record.content.match(/!\[.*?\]\(([^\s)]+)(?:\s*=\d+%?)?\)/)
+    return m ? m[1] : null
+  }
+  return null
 }
 
 // 从记录日期中提取年/月/日
@@ -52,6 +57,7 @@ export function useRecords() {
             day: parseRecordDate(r).day,
             title: r.title,
             content: r.content || '',
+            images: r.images ? JSON.parse(r.images) : [],
             location: r.location || '',
             lat: r.lat,
             lng: r.lng,
@@ -70,7 +76,7 @@ export function useRecords() {
     }
   }
 
-  async function addRecord({ title, content, location, date, lat, lng }) {
+  async function addRecord({ title, content, location, date, lat, lng, images }) {
     const body = {
       title,
       content: content || '',
@@ -78,6 +84,7 @@ export function useRecords() {
       lat: lat || null,
       lng: lng || null,
       record_date: date || new Date().toISOString(),
+      images: images ? JSON.stringify(images) : '[]',
     }
     const r = await api.post('/api/records', body)
     const { year, month, day } = parseRecordDate(r)
@@ -88,6 +95,7 @@ export function useRecords() {
       day,
       title: r.title,
       content: r.content || '',
+      images: r.images ? JSON.parse(r.images) : [],
       location: r.location || '',
       lat: r.lat,
       lng: r.lng,
@@ -115,6 +123,7 @@ export function useRecords() {
         day,
         title: r.title,
         content: r.content || '',
+        images: r.images ? JSON.parse(r.images) : [],
         location: r.location || '',
         lat: r.lat,
         lng: r.lng,
@@ -132,13 +141,14 @@ export function useRecords() {
     }
   }
 
-  async function updateRecord(id, { title, content, location, lat, lng }) {
+  async function updateRecord(id, { title, content, location, lat, lng, images }) {
     const body = {}
     if (title !== undefined) body.title = title
     if (content !== undefined) body.content = content
     if (location !== undefined) body.location = location
     if (lat !== undefined) body.lat = lat
     if (lng !== undefined) body.lng = lng
+    if (images !== undefined) body.images = JSON.stringify(images)
 
     const r = await api.put(`/api/records/${id}`, body)
     // 更新本地缓存
@@ -147,6 +157,7 @@ export function useRecords() {
       if (found) {
         if (title !== undefined) found.title = r.title
         if (content !== undefined) found.content = r.content
+        if (images !== undefined) found.images = JSON.parse(r.images)
         if (location !== undefined) found.location = r.location
         if (lat !== undefined) found.lat = r.lat
         if (lng !== undefined) found.lng = r.lng
@@ -177,7 +188,7 @@ export function useRecords() {
     for (const [key, records] of Object.entries(recordsMap)) {
       const [y, m] = key.split('-').map(Number)
       for (const r of records) {
-        const firstPhoto = getFirstImage(r.content)
+        const firstPhoto = getFirstImage(r)
         if (r.lat && r.lng && firstPhoto) {
           results.push({
             ...r,

@@ -12,9 +12,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRecords } from '../stores/records'
+import { wgs84ToGcj02 } from '../utils/coord'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster'
@@ -63,7 +64,8 @@ function addCurrentLocation() {
           iconAnchor: [12, 12],
           className: 'my-location-icon',
         })
-        L.marker([pos.coords.latitude, pos.coords.longitude], { icon: myIcon }).addTo(mapInstance)
+        const [gcjLat, gcjLng] = wgs84ToGcj02(pos.coords.latitude, pos.coords.longitude)
+        L.marker([gcjLat, gcjLng], { icon: myIcon }).addTo(mapInstance)
       })
     },
     () => { locating.value = false },
@@ -81,8 +83,10 @@ function initMap() {
     attributionControl: false,
   })
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
     maxZoom: 19,
+    subdomains: ['1', '2', '3', '4'],
+    attribution: '&copy; 高德地图',
   }).addTo(mapInstance)
 
   mcg.addTo(mapInstance)
@@ -93,6 +97,9 @@ function initMap() {
   }
 
   mapRecords.value.forEach((r) => {
+    // WGS-84 → GCJ-02 转换（高德地图瓦片使用火星坐标系）
+    const [gcjLat, gcjLng] = wgs84ToGcj02(r.lat, r.lng)
+
     // 照片缩略图标记（圆形裁剪，如手机相册地图）
     const photoIcon = L.divIcon({
       html: `<div class="photo-marker"><img src="${r.firstPhoto}" alt="${r.title}" /></div>`,
@@ -101,7 +108,7 @@ function initMap() {
       className: 'photo-marker-icon',
     })
 
-    const marker = L.marker([r.lat, r.lng], {
+    const marker = L.marker([gcjLat, gcjLng], {
       icon: photoIcon,
       photoUrl: r.firstPhoto,
     })
@@ -133,12 +140,15 @@ function initMap() {
   setTimeout(() => mapInstance?.invalidateSize(), 200)
 }
 
-onMounted(() => {
-  nextTick(() => {
-    initMap()
-    addCurrentLocation()
-  })
-})
+
+watch(() => mapRecords.value.length, (len) => {
+  if (len > 0 && !mapInstance) {
+    nextTick(() => {
+      initMap()
+      addCurrentLocation()
+    })
+  }
+}, { immediate: true })
 
 onBeforeUnmount(() => {
   if (mapInstance) {

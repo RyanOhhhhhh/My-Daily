@@ -24,5 +24,6 @@ class Record(Base):
     location = Column(String(200))
     lat = Column(Float)
     lng = Column(Float)
+    images = Column(Text, default="[]")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

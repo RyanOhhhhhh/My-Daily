@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import User
-from schemas import AuthRegister, AuthLogin, AuthResponse, UserOut
-from auth import hash_password, verify_password, create_access_token
+from schemas import AuthRegister, AuthLogin, AuthResponse, UserOut, VerifyPassword
+from auth import hash_password, verify_password, create_access_token, get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -39,3 +39,13 @@ def login(body: AuthLogin, db: Session = Depends(get_db)):
 
     token = create_access_token(data={"sub": str(user.id)})
     return AuthResponse(access_token=token, user=UserOut.model_validate(user))
+
+
+@router.post("/verify-password")
+def verify_password_endpoint(
+    body: VerifyPassword,
+    current_user: User = Depends(get_current_user),
+):
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(status_code=403, detail="密码错误")
+    return {"ok": True}
